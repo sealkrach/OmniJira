@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+enum InstanceType {
+  CLOUD
+  SERVER
+}
+
+enum UseCaseLevel {
+  DOMAIN
+  CAPABILITY
+  INITIATIVE
+}
+
+enum MappingSource {
+  AUTOMATIC
+  MANUAL
+  IMPORTED
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum RagStatus {
+  GREEN
+  AMBER
+  RED
+}
+
+enum LogicOperator {
+  AND
+  OR
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  role         Role      @default(VIEWER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  ownedUseCases UseCase[] @relation("UseCaseOwner")
+}
+
+model JiraInstance {
+  id                  String       @id @default(cuid())
+  name                String
+  url                 String
+  email               String
+  encryptedToken      String
+  instanceType        InstanceType @default(CLOUD)
+  syncEnabled         Boolean      @default(true)
+  syncIntervalMinutes Int          @default(60)
+  projectFilter       String[]     @default([])
+  storyPointsField    String       @default("customfield_10016")
+  lastSyncAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  tickets             JiraTicket[]
+  syncJobs            SyncJob[]
+  mappingRules        MappingRule[]
+}
+
+model Entity {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  color       String    @default("#6366f1")
+  parentId    String?
+  parent      Entity?   @relation("EntityHierarchy", fields: [parentId], references: [id])
+  children    Entity[]  @relation("EntityHierarchy")
+  useCases    UseCase[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model UseCase {
+  id             String                 @id @default(cuid())
+  name           String
+  description    String?
+  entityId       String
+  entity         Entity                 @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  parentId       String?
+  parent         UseCase?               @relation("UseCaseHierarchy", fields: [parentId], references: [id])
+  children       UseCase[]              @relation("UseCaseHierarchy")
+  level          UseCaseLevel
+  targetQuarter  Int?
+  targetYear     Int?
+  priority       Int                    @default(0)
+  statusOverride RagStatus?
+  ownerId        String?
+  owner          User?                  @relation("UseCaseOwner", fields: [ownerId], references: [id])
+  mappingRules   MappingRule[]
+  ticketMappings TicketUseCaseMapping[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+}
+
+model MappingRule {
+  id             String                 @id @default(cuid())
+  name           String
+  useCaseId      String
+  useCase        UseCase                @relation(fields: [useCaseId], references: [id], onDelete: Cascade)
+  jiraInstanceId String?
+  jiraInstance   JiraInstance?          @relation(fields: [jiraInstanceId], references: [id])
+  logic          LogicOperator          @default(AND)
+  conditions     Json
+  priority       Int                    @default(0)
+  enabled        Boolean                @default(true)
+  ticketMappings TicketUseCaseMapping[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+}
+
+model JiraTicket {
+  id             String                 @id @default(cuid())
+  jiraInstanceId String
+  jiraInstance   JiraInstance           @relation(fields: [jiraInstanceId], references: [id], onDelete: Cascade)
+  jiraKey        String
+  summary        String
+  status         String
+  statusCategory String
+  issueType      String
+  labels         String[]               @default([])
+  components     String[]               @default([])
+  epicKey        String?
+  epicName       String?
+  sprintName     String?
+  storyPoints    Float?
+  assignee       String?
+  priority       String?
+  jiraCreatedAt  DateTime?
+  jiraUpdatedAt  DateTime?
+  syncedAt       DateTime               @default(now())
+  rawData        Json
+  useCaseMappings TicketUseCaseMapping[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@unique([jiraInstanceId, jiraKey])
+}
+
+model TicketUseCaseMapping {
+  id          String        @id @default(cuid())
+  ticketId    String
+  ticket      JiraTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  useCaseId   String
+  useCase     UseCase       @relation(fields: [useCaseId], references: [id], onDelete: Cascade)
+  source      MappingSource
+  confidence  Float         @default(1.0)
+  ruleId      String?
+  rule        MappingRule?  @relation(fields: [ruleId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([ticketId, useCaseId])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model SyncJob {
+  id             String       @id @default(cuid())
+  jiraInstanceId String
+  jiraInstance   JiraInstance @relation(fields: [jiraInstanceId], references: [id], onDelete: Cascade)
+  status         SyncStatus   @default(PENDING)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  ticketsSynced  Int          @default(0)
+  error          String?
+  createdAt      DateTime     @default(now())
+}
