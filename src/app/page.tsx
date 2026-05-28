@@ -14,7 +14,10 @@ import {
   Server,
   CheckCircle2,
   RefreshCw,
+  Download,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { exportCsv, exportPdf } from "@/lib/export";
 
 interface Kpis {
   totalTickets: number;
@@ -56,6 +59,57 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="Executive Overview" />
         <main className="flex-1 overflow-y-auto p-6">
+          {/* Export buttons */}
+          {kpis && (
+            <div className="flex justify-end gap-2 mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const cols = ["Metric", "Value"];
+                  const rows: (string | number)[][] = [
+                    ["Total Tickets", kpis.totalTickets],
+                    ["Done Tickets", kpis.doneTickets],
+                    ["Progress %", kpis.progressPercent],
+                    ["Entities", kpis.totalEntities],
+                    ["Use Cases", kpis.totalUseCases],
+                    ["Jira Instances", kpis.totalInstances],
+                    ...(entityProgress ?? []).map((e: any) => [
+                      `${e.entityName} — Progress`,
+                      `${Math.round(e.progress * 100)}% (${e.doneCount}/${e.totalCount})`,
+                    ]),
+                  ];
+                  exportCsv("overview", cols, rows);
+                }}
+              >
+                <Download className="w-4 h-4" />
+                CSV
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const cols = ["Metric", "Value"];
+                  const rows: (string | number)[][] = [
+                    ["Total Tickets", kpis.totalTickets],
+                    ["Done Tickets", kpis.doneTickets],
+                    ["Progress %", `${kpis.progressPercent}%`],
+                    ["Entities", kpis.totalEntities],
+                    ["Use Cases", kpis.totalUseCases],
+                    ["Jira Instances", kpis.totalInstances],
+                    ...(entityProgress ?? []).map((e: any) => [
+                      `${e.entityName} — Progress`,
+                      `${Math.round(e.progress * 100)}% (${e.doneCount}/${e.totalCount})`,
+                    ]),
+                  ];
+                  exportPdf("overview", "Executive Overview", cols, rows);
+                }}
+              >
+                <Download className="w-4 h-4" />
+                PDF
+              </Button>
+            </div>
+          )}
           {/* KPI Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <KpiCard

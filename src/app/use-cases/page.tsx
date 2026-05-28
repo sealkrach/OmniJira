@@ -8,7 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { Plus, ChevronRight, Pencil, Trash2, Target, Sparkles, Network, RotateCcw } from "lucide-react";
+import { Plus, ChevronRight, Pencil, Trash2, Target, Sparkles, Network, RotateCcw, Download } from "lucide-react";
+import { exportCsv, exportPdf } from "@/lib/export";
 
 interface Entity { id: string; name: string }
 interface JiraInstance { id: string; name: string }
@@ -23,13 +24,31 @@ interface UseCase {
   entityId: string;
   parentId: string | null;
   children: UseCase[];
-  _count: { ticketMappings: number }; // present at all levels after API fix
+  _count: { ticketMappings: number };
 }
 
 const LEVELS = ["DOMAIN", "CAPABILITY", "INITIATIVE"] as const;
 
+const UC_EXPORT_COLS = ["Level", "Name", "Description", "Tickets", "Quarter", "Year"];
+
+function flattenUcRows(ucs: UseCase[], depth = 0): (string | number)[][] {
+  const rows: (string | number)[][] = [];
+  for (const uc of ucs) {
+    rows.push([
+      uc.level,
+      "  ".repeat(depth) + uc.name,
+      uc.description ?? "",
+      totalTickets(uc),
+      uc.targetQuarter ? `Q${uc.targetQuarter}` : "",
+      uc.targetYear ?? "",
+    ]);
+    if (uc.children?.length) rows.push(...flattenUcRows(uc.children, depth + 1));
+  }
+  return rows;
+}
+
 function totalTickets(uc: UseCase): number {
-  return uc._count.ticketMappings + uc.children.reduce((sum, c) => sum + totalTickets(c), 0);
+  return uc._count.ticketMappings + (uc.children ?? []).reduce((sum, c) => sum + totalTickets(c), 0);
 }
 
 async function apiFetch(url: string, opts?: RequestInit) {
@@ -229,8 +248,9 @@ function UseCaseNode({ uc, depth, onEdit, onDelete }: {
   uc: UseCase; depth: number;
   onEdit: (uc: UseCase) => void; onDelete: (id: string) => void;
 }) {
+  const children = uc.children ?? [];
   const [expanded, setExpanded] = useState(depth <= 1);
-  const hasChildren = uc.children.length > 0;
+  const hasChildren = children.length > 0;
 
   const levelMeta = depth === 0
     ? { color: "text-indigo-400 font-semibold", badge: "Domain", badgeClass: "bg-indigo-950 text-indigo-400 border border-indigo-800/50" }
@@ -267,7 +287,7 @@ function UseCaseNode({ uc, depth, onEdit, onDelete }: {
       </div>
       {expanded && hasChildren && (
         <div className="ml-6 border-l border-slate-800/70 pl-3">
-          {uc.children.map((child) => (
+          {children.map((child) => (
             <UseCaseNode key={child.id} uc={child} depth={depth + 1} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
@@ -367,10 +387,20 @@ export default function UseCasesPage() {
                 {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
               {useCases.length > 0 && (
-                <Button variant="danger" onClick={() => setModal("reset")} title="Reset all AI-generated use cases">
-                  <RotateCcw className="w-4 h-4" />
-                  Reset
-                </Button>
+                <>
+                  <Button variant="ghost" onClick={() => exportCsv("use-cases", UC_EXPORT_COLS, flattenUcRows(useCases))} title="Export CSV">
+                    <Download className="w-4 h-4" />
+                    CSV
+                  </Button>
+                  <Button variant="ghost" onClick={() => exportPdf("use-cases", "Use Case Taxonomy", UC_EXPORT_COLS, flattenUcRows(useCases))} title="Export PDF">
+                    <Download className="w-4 h-4" />
+                    PDF
+                  </Button>
+                  <Button variant="danger" onClick={() => setModal("reset")} title="Reset all AI-generated use cases">
+                    <RotateCcw className="w-4 h-4" />
+                    Reset
+                  </Button>
+                </>
               )}
               <Button variant="ghost" onClick={() => setModal("ai-map")} title="AI: map new tickets to existing use cases">
                 <Network className="w-4 h-4" />

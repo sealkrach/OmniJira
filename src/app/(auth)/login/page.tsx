@@ -4,6 +4,8 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
+const keycloakEnabled = process.env.NEXT_PUBLIC_KEYCLOAK_ENABLED === "true";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -15,11 +17,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const res = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    const res = await signIn("credentials", { email, password, redirect: false });
     setLoading(false);
     if (res?.error) {
       setError("Invalid email or password");
@@ -47,11 +45,38 @@ export default function LoginPage() {
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-8">
           <h1 className="text-xl font-semibold text-white mb-6">Sign in to your account</h1>
 
+          {/* Keycloak SSO */}
+          {keycloakEnabled && (
+            <>
+              <button
+                type="button"
+                onClick={() => signIn("keycloak", { callbackUrl: "/" })}
+                className="w-full flex items-center justify-center gap-3 bg-[#4D4D4D] hover:bg-[#3d3d3d] text-white font-medium rounded-lg px-4 py-2.5 transition-colors mb-4"
+              >
+                {/* Keycloak logo */}
+                <svg className="w-5 h-5" viewBox="0 0 64 64" fill="none">
+                  <path d="M32 4L4 20v24l28 16 28-16V20L32 4z" fill="#4D9FEC" />
+                  <path d="M32 12l-20 11.4v17.2L32 52l20-11.4V23.4L32 12z" fill="#fff" />
+                  <path d="M32 20a12 12 0 100 24 12 12 0 000-24zm0 18a6 6 0 110-12 6 6 0 010 12z" fill="#4D9FEC" />
+                </svg>
+                Sign in with Keycloak
+              </button>
+
+              <div className="relative my-5">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-700" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-slate-900 px-3 text-xs text-slate-500">or sign in with email</span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Credentials form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                Email address
-              </label>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Email address</label>
               <input
                 type="email"
                 value={email}
@@ -63,9 +88,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
               <input
                 type="password"
                 value={password}

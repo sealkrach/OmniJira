@@ -9,13 +9,36 @@ import { InitiativeProgressBar } from "@/components/qap/initiative-progress-bar"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { RagBadge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 import type { EntityProgress } from "@/types/rag";
+import { exportCsv, exportPdf } from "@/lib/export";
 
 export default function QapPage() {
   const currentYear = new Date().getFullYear();
   const currentQ = Math.ceil((new Date().getMonth() + 1) / 3);
   const [quarter, setQuarter] = useState<number | null>(currentQ);
   const [year, setYear] = useState(currentYear);
+
+  const QAP_COLS = ["Entity", "Use Case", "Done", "Total", "Progress %", "RAG"];
+
+  function buildQapRows(): (string | number)[][] {
+    if (!data) return [];
+    return data.flatMap((entity) =>
+      entity.useCases.length
+        ? entity.useCases.map((uc) => [
+            entity.entityName,
+            uc.name,
+            uc.doneCount,
+            uc.totalCount,
+            Math.round(uc.progress * 100),
+            uc.rag,
+          ])
+        : [[entity.entityName, "(no use cases)", 0, 0, 0, entity.rag]]
+    );
+  }
+
+  const periodLabel = quarter ? `Q${quarter}-${year}` : `FY-${year}`;
 
   const { data, isLoading } = useQuery<EntityProgress[]>({
     queryKey: ["qap", { quarter, year }],
@@ -43,11 +66,25 @@ export default function QapPage() {
                 Progress across all entities and use cases
               </p>
             </div>
-            <QuarterSelector
-              quarter={quarter}
-              year={year}
-              onChange={(q, y) => { setQuarter(q); setYear(y); }}
-            />
+            <div className="flex items-center gap-2">
+              {data && data.length > 0 && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => exportCsv(`qap-${periodLabel}`, QAP_COLS, buildQapRows())}>
+                    <Download className="w-4 h-4" />
+                    CSV
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => exportPdf(`qap-${periodLabel}`, `Quarterly Action Plan — ${periodLabel}`, QAP_COLS, buildQapRows())}>
+                    <Download className="w-4 h-4" />
+                    PDF
+                  </Button>
+                </>
+              )}
+              <QuarterSelector
+                quarter={quarter}
+                year={year}
+                onChange={(q, y) => { setQuarter(q); setYear(y); }}
+              />
+            </div>
           </div>
 
           {isLoading && (
