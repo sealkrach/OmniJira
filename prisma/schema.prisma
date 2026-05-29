@@ -48,14 +48,42 @@ enum LogicOperator {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String?   // null for SSO-only accounts
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String?
   name         String?
-  role         Role      @default(VIEWER)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  ownedUseCases UseCase[] @relation("UseCaseOwner")
+  role         Role               @default(VIEWER)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  ownedUseCases UseCase[]         @relation("UseCaseOwner")
+  chatConversations ChatConversation[]
+  memory       UserMemory?
+}
+
+model ChatConversation {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+  summary   String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model ChatMessage {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  createdAt      DateTime         @default(now())
+}
+
+model UserMemory {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facts     Json     @default("[]")
+  updatedAt DateTime @updatedAt
 }
 
 model JiraInstance {

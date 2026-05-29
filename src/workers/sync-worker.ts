@@ -1,6 +1,7 @@
 import { Worker, Queue, Job } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { processSyncJob } from "../lib/sync/processor";
+import { generatePendingEmbeddings } from "../lib/ai/embeddings";
 import type { SyncJobData } from "../lib/queue";
 
 const SYNC_QUEUE = "jira-sync";
@@ -68,6 +69,10 @@ async function main() {
       console.log(`[worker] Syncing instance ${instanceId} (job ${resolvedJobId})`);
       await processSyncJob(resolvedJobId, instanceId);
       console.log(`[worker] Finished sync for instance ${instanceId}`);
+
+      // Generate embeddings for tickets that don't have one yet
+      const embedded = await generatePendingEmbeddings(20);
+      if (embedded > 0) console.log(`[worker] Generated embeddings for ${embedded} ticket(s)`);
     },
     {
       connection,

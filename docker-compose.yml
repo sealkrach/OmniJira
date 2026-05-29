@@ -2,13 +2,14 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_DB: omnijira
       POSTGRES_USER: omnijira
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./prisma/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql
     ports:
       - "5432:5432"
     healthcheck:

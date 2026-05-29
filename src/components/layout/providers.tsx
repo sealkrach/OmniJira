@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Session } from "next-auth";
+import { ChatWidget } from "@/components/chat/chat-widget";
 
 export function Providers({
   children,
@@ -26,7 +27,10 @@ export function Providers({
 
   return (
     <SessionProvider session={session}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        {children}
+        <ChatWidget />
+      </QueryClientProvider>
     </SessionProvider>
   );
 }
