@@ -7,8 +7,12 @@ function parseRedisUrl(url: string) {
   return {
     host: parsed.hostname,
     port: parseInt(parsed.port || "6379", 10),
-    password: parsed.password || undefined,
+    password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
     maxRetriesPerRequest: null as null,
+    enableReadyCheck: false,
+    enableOfflineQueue: true,
+    connectTimeout: 10_000,
+    family: 4,
   };
 }
 

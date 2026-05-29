@@ -1,0 +1,23 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: omnijira-web-pdb
+  namespace: omnijira
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: omnijira
+      role: web
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: omnijira-worker-pdb
+  namespace: omnijira
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: omnijira
+      role: worker

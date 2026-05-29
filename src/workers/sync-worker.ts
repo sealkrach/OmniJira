@@ -11,8 +11,12 @@ function parseRedisUrl(url: string) {
   return {
     host: parsed.hostname,
     port: parseInt(parsed.port || "6379", 10),
-    password: parsed.password || undefined,
+    password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
     maxRetriesPerRequest: null as null,
+    enableReadyCheck: false,
+    enableOfflineQueue: true,
+    connectTimeout: 10_000,
+    family: 4,
   };
 }
 
@@ -89,12 +93,30 @@ async function main() {
     console.log(`[worker] Job ${job.id} completed`);
   });
 
-  process.on("SIGTERM", async () => {
-    console.log("[worker] Shutting down...");
-    await worker.close();
-    await prisma.$disconnect();
-    process.exit(0);
-  });
+  async function shutdown(signal: string): Promise<void> {
+    console.log(`[worker] ${signal} received — draining active jobs and shutting down...`);
+
+    const forceExit = setTimeout(() => {
+      console.error("[worker] Graceful shutdown timeout (30s) exceeded — forcing exit");
+      process.exit(1);
+    }, 30_000);
+    forceExit.unref();
+
+    try {
+      await worker.close();
+      await prisma.$disconnect();
+      clearTimeout(forceExit);
+      console.log("[worker] Graceful shutdown complete");
+      process.exit(0);
+    } catch (err) {
+      console.error("[worker] Error during shutdown:", err);
+      clearTimeout(forceExit);
+      process.exit(1);
+    }
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
   console.log("[worker] Ready");
 }

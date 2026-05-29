@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: omnijira-worker
+  namespace: omnijira
+  labels:
+    app: omnijira
+    role: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: omnijira
+      role: worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      labels:
+        app: omnijira
+        role: worker
+    spec:
+      terminationGracePeriodSeconds: 60   # laisse le temps de finir les jobs en cours
+      containers:
+        - name: worker
+          image: omnijira-worker:latest   # <-- remplacer par votre registry
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: omnijira-secret
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "process.exit(0)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3

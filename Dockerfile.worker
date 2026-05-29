@@ -10,7 +10,9 @@ RUN npm ci
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 worker
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
-CMD ["npx", "tsx", "src/workers/sync-worker.ts"]
+USER worker
+CMD ["./node_modules/.bin/tsx", "src/workers/sync-worker.ts"]

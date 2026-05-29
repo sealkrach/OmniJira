@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: omnijira-web
+  namespace: omnijira
+  labels:
+    app: omnijira
+    role: web
+spec:
+  selector:
+    app: omnijira
+    role: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: ClusterIP

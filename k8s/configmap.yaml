@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: omnijira-config
+  namespace: omnijira
+data:
+  NEXTAUTH_URL: "https://omnijira.example.com"   # <-- remplacer par le vrai domaine
+  NEXT_PUBLIC_KEYCLOAK_ENABLED: "false"
+  KEYCLOAK_ISSUER: ""
+  KEYCLOAK_CLIENT_ID: ""
+  NODE_ENV: "production"

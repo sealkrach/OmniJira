@@ -24,7 +24,7 @@ export async function getLlmConfig(): Promise<{ apiKey: string; model: string }>
 
 export async function getOpenAI(): Promise<{ client: OpenAI; model: string }> {
   const { apiKey, model } = await getLlmConfig();
-  return { client: new OpenAI({ apiKey }), model };
+  return { client: new OpenAI({ apiKey, timeout: 45_000 }), model };
 }
 
 export async function saveLlmSettings(apiKey: string, model: string): Promise<void> {

@@ -1,0 +1,27 @@
+# Nécessite un Ingress Controller (ex: nginx-ingress, traefik) et cert-manager pour TLS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: omnijira
+  namespace: omnijira
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - omnijira.example.com   # <-- remplacer
+      secretName: omnijira-tls
+  rules:
+    - host: omnijira.example.com   # <-- remplacer
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: omnijira-web
+                port:
+                  number: 80
