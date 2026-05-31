@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import type { JiraSearchResponse, JiraProjectRaw } from "@/types/jira";
+import type { SyncLogger } from "@/lib/sync/logger";
 
 const BASE_FIELDS = [
   "summary",
@@ -31,8 +32,9 @@ export class JiraClient {
     instanceType: "CLOUD" | "SERVER";
     storyPointsField?: string;
     rateLimitDelay?: number;
+    logger?: SyncLogger;
   }) {
-    const { url, email, token, instanceType, storyPointsField, rateLimitDelay } = options;
+    const { url, email, token, instanceType, storyPointsField, rateLimitDelay, logger } = options;
     this.instanceType = instanceType;
     const apiVersion = instanceType === "CLOUD" ? "3" : "2";
     this.rateLimitDelay = rateLimitDelay ?? (instanceType === "CLOUD" ? 300 : 200);
@@ -49,24 +51,36 @@ export class JiraClient {
       timeout: 30_000,
     });
 
+    const startTimes = new Map<string, number>();
+
     this.http.interceptors.request.use((config) => {
-      console.log(`[jira] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, config.params ?? "");
+      const key = `${config.method?.toUpperCase()} ${config.url}`;
+      startTimes.set(key, Date.now());
+      if (logger) {
+        logger.debug(`→ ${key} ${JSON.stringify(config.params ?? "")}`);
+      }
       return config;
     });
+
     this.http.interceptors.response.use(
       (res) => {
-        const extra = res.data && typeof res.data === "object"
-          ? ` [total=${(res.data as Record<string,unknown>).total ?? "?"} isLast=${(res.data as Record<string,unknown>).isLast ?? "?"} issues=${Array.isArray((res.data as Record<string,unknown>).issues) ? ((res.data as Record<string,unknown>).issues as unknown[]).length : "n/a"} values=${Array.isArray((res.data as Record<string,unknown>).values) ? ((res.data as Record<string,unknown>).values as unknown[]).length : "n/a"}]`
-          : "";
-        console.log(`[jira] → ${res.status} ${res.config.url}${extra}`);
+        const key = `${res.config.method?.toUpperCase()} ${res.config.url}`;
+        const durationMs = Date.now() - (startTimes.get(key) ?? Date.now());
+        startTimes.delete(key);
+        if (logger) {
+          const data = res.data as Record<string, unknown> | null;
+          const pagination = data
+            ? ` total=${data.total ?? "?"} isLast=${data.isLast ?? "?"} issues=${Array.isArray(data.issues) ? data.issues.length : "n/a"} values=${Array.isArray(data.values) ? data.values.length : "n/a"}`
+            : "";
+          logger.debug(`← ${res.status} ${res.config.url} (${durationMs}ms)${pagination}`);
+        }
         return res;
       },
       (err: unknown) => {
         if (axios.isAxiosError(err)) {
-          console.error(
-            `[jira] ERROR ${err.response?.status} ${err.config?.url}`,
-            JSON.stringify(err.response?.data ?? err.message)
-          );
+          const msg = `${err.response?.status} ${err.config?.url} — ${JSON.stringify(err.response?.data ?? err.message)}`;
+          if (logger) logger.error(msg);
+          else console.error(`[jira] ERROR ${msg}`);
         }
         return Promise.reject(err);
       }

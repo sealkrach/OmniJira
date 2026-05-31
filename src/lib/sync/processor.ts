@@ -5,17 +5,26 @@ import { JiraClient } from "@/lib/jira/client";
 import { paginatedSearch } from "@/lib/jira/pagination";
 import { transformIssue } from "@/lib/jira/transformers";
 import { runMappingEngine } from "@/lib/mapping/engine";
+import { SyncLogger } from "@/lib/sync/logger";
 
-export async function processSyncJob(syncJobId: string, instanceId: string): Promise<void> {
+export async function processSyncJob(
+  syncJobId: string,
+  instanceId: string,
+  logger: SyncLogger
+): Promise<void> {
   await prisma.syncJob.update({
     where: { id: syncJobId },
     data: { status: "RUNNING", startedAt: new Date() },
   });
 
+  const startedAt = Date.now();
+
   try {
     const instance = await prisma.jiraInstance.findUniqueOrThrow({
       where: { id: instanceId },
     });
+
+    logger.info(`Starting sync for instance "${instance.name}" (${instance.url})`);
 
     const token = decrypt(instance.encryptedToken);
     const client = new JiraClient({
@@ -24,6 +33,7 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
       token,
       instanceType: instance.instanceType,
       storyPointsField: instance.storyPointsField,
+      logger,
     });
 
     let ticketsSynced = 0;
@@ -32,7 +42,9 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
     // Build project list
     const projects = instance.projectFilter.length > 0
       ? instance.projectFilter
-      : await fetchAllProjectKeys(client);
+      : await fetchAllProjectKeys(client, logger);
+
+    logger.info(`Projects to sync: ${projects.length} — [${projects.join(", ")}]`);
 
     for (const projectKey of projects) {
       const updatedSince = instance.lastSyncAt
@@ -43,7 +55,15 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
         ? `project = "${projectKey}" AND updated >= "${updatedSince}" ORDER BY updated ASC`
         : `project = "${projectKey}" ORDER BY updated ASC`;
 
+      logger.debug(`Project ${projectKey} — JQL: ${jql}`);
+
+      let batchIndex = 0;
+      let projectTickets = 0;
+
       for await (const batch of paginatedSearch(client, jql)) {
+        batchIndex++;
+        logger.debug(`Project ${projectKey} — batch #${batchIndex}: ${batch.length} issues`);
+
         const transformed = batch.map((issue) =>
           transformIssue(issue, instance.storyPointsField)
         );
@@ -70,19 +90,27 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
           });
           upsertedIds.push(upserted.id);
           ticketsSynced++;
+          projectTickets++;
         }
       }
+
+      logger.info(`Project ${projectKey} — ${projectTickets} tickets synced`);
     }
 
     // Run mapping engine on all upserted tickets
     if (upsertedIds.length > 0) {
+      logger.info(`Running mapping engine on ${upsertedIds.length} tickets...`);
       await runMappingEngine(instanceId, upsertedIds);
+      logger.info("Mapping engine complete");
     }
 
     await prisma.jiraInstance.update({
       where: { id: instanceId },
       data: { lastSyncAt: new Date() },
     });
+
+    const durationSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+    logger.info(`Sync complete — ${ticketsSynced} tickets in ${durationSec}s`);
 
     await prisma.syncJob.update({
       where: { id: syncJobId },
@@ -94,6 +122,7 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+    logger.error(message);
     await prisma.syncJob.update({
       where: { id: syncJobId },
       data: {
@@ -106,8 +135,8 @@ export async function processSyncJob(syncJobId: string, instanceId: string): Pro
   }
 }
 
-async function fetchAllProjectKeys(client: JiraClient): Promise<string[]> {
+async function fetchAllProjectKeys(client: JiraClient, logger: SyncLogger): Promise<string[]> {
   const projects = await client.getProjects();
-  console.log(`[sync] visible projects (${projects.length}):`, projects.map((p) => `${p.key} — ${p.name}`).join(", ") || "(none)");
+  logger.info(`Visible projects (${projects.length}): ${projects.map((p) => `${p.key} — ${p.name}`).join(", ") || "(none)"}`);
   return projects.map((p) => p.key);
 }

@@ -2,9 +2,11 @@ import { Worker, Queue, Job } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { processSyncJob } from "../lib/sync/processor";
 import { generatePendingEmbeddings } from "../lib/ai/embeddings";
+import { SyncLogger } from "../lib/sync/logger";
 import type { SyncJobData } from "../lib/queue";
 
 const SYNC_QUEUE = "jira-sync";
+const VERBOSE = process.env.SYNC_VERBOSE === "true";
 
 function parseRedisUrl(url: string) {
   const parsed = new URL(url);
@@ -52,7 +54,7 @@ async function main() {
   const prisma = new PrismaClient();
   const connection = getConnectionOptions();
 
-  console.log("[worker] OmniJira sync worker starting...");
+  console.log(`[worker] OmniJira sync worker starting... (verbose=${VERBOSE})`);
 
   await registerRepeatableJobs(prisma, connection);
 
@@ -70,9 +72,23 @@ async function main() {
         resolvedJobId = created.id;
       }
 
+      const logger = new SyncLogger(VERBOSE);
+
       console.log(`[worker] Syncing instance ${instanceId} (job ${resolvedJobId})`);
-      await processSyncJob(resolvedJobId, instanceId);
-      console.log(`[worker] Finished sync for instance ${instanceId}`);
+
+      try {
+        await processSyncJob(resolvedJobId, instanceId, logger);
+        console.log(`[worker] Finished sync for instance ${instanceId}`);
+      } finally {
+        // Always persist logs, even on failure (processSyncJob already updated status)
+        const logs = logger.getLogs();
+        if (logs.length > 0) {
+          await prisma.syncJob.update({
+            where: { id: resolvedJobId },
+            data: { logs },
+          });
+        }
+      }
 
       // Generate embeddings for tickets that don't have one yet
       const embedded = await generatePendingEmbeddings(20);

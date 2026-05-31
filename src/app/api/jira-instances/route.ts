@@ -23,10 +23,21 @@ export async function GET() {
       lastSyncAt: true,
       createdAt: true,
       _count: { select: { tickets: true, syncJobs: true } },
+      syncJobs: {
+        where: { status: { in: ["PENDING", "RUNNING"] } },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, status: true, ticketsSynced: true, startedAt: true },
+      },
     },
   });
 
-  return ok(instances);
+  const shaped = instances.map(({ syncJobs, ...rest }) => ({
+    ...rest,
+    activeSyncJob: syncJobs[0] ?? null,
+  }));
+
+  return ok(shaped);
 }
 
 export async function POST(req: NextRequest) {

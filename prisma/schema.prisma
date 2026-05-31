@@ -215,5 +215,6 @@ model SyncJob {
   completedAt    DateTime?
   ticketsSynced  Int          @default(0)
   error          String?
+  logs           String[]     @default([])
   createdAt      DateTime     @default(now())
 }

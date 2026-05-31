@@ -11,7 +11,7 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Server, Plus, RefreshCw, Trash2, Pencil, CheckCircle2,
-  XCircle, Loader2, Clock,
+  XCircle, Loader2, Clock, FileText, X,
 } from "lucide-react";
 
 async function apiFetch(url: string, opts?: RequestInit) {
@@ -21,6 +21,13 @@ async function apiFetch(url: string, opts?: RequestInit) {
   return data;
 }
 import { formatDistanceToNow } from "date-fns";
+
+interface ActiveSyncJob {
+  id: string;
+  status: "PENDING" | "RUNNING";
+  ticketsSynced: number;
+  startedAt: string | null;
+}
 
 interface Instance {
   id: string;
@@ -34,6 +41,7 @@ interface Instance {
   storyPointsField: string;
   lastSyncAt: string | null;
   _count: { tickets: number; syncJobs: number };
+  activeSyncJob: ActiveSyncJob | null;
 }
 
 interface SyncJob {
@@ -44,6 +52,10 @@ interface SyncJob {
   ticketsSynced: number;
   error: string | null;
   createdAt: string;
+}
+
+interface SyncJobDetail extends SyncJob {
+  logs: string[];
 }
 
 function InstanceForm({
@@ -140,11 +152,55 @@ function InstanceForm({
   );
 }
 
-function SyncStatus({ status }: { status: string }) {
+function SyncStatusBadge({ status }: { status: string }) {
   if (status === "COMPLETED") return <Badge variant="green">Completed</Badge>;
   if (status === "FAILED") return <Badge variant="red">Failed</Badge>;
-  if (status === "RUNNING") return <Badge variant="amber">Running</Badge>;
+  if (status === "RUNNING") return <Badge variant="amber"><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Running</Badge>;
   return <Badge variant="outline">Pending</Badge>;
+}
+
+function LogViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery<SyncJobDetail>({
+    queryKey: ["sync-job", jobId],
+    queryFn: () => apiFetch(`/api/sync-jobs/${jobId}`),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "RUNNING" || status === "PENDING" ? 2_000 : false;
+    },
+  });
+
+  return (
+    <div className="mt-3 border border-slate-700 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-800 border-b border-slate-700">
+        <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5" />
+          Sync Logs
+          {data && <SyncStatusBadge status={data.status} />}
+        </span>
+        <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="bg-slate-950 max-h-52 overflow-y-auto p-3">
+        {isLoading && (
+          <p className="text-xs text-slate-500 flex items-center gap-1.5">
+            <Loader2 className="w-3 h-3 animate-spin" />Loading logs...
+          </p>
+        )}
+        {data && data.logs.length === 0 && (
+          <p className="text-xs text-slate-500 italic">No logs available — enable SYNC_VERBOSE=true in the worker to capture detailed logs.</p>
+        )}
+        {data && data.logs.length > 0 && (
+          <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap leading-5">
+            {data.logs.join("\n")}
+          </pre>
+        )}
+        {data?.error && (
+          <p className="text-xs text-red-400 mt-2 font-mono">[ERROR] {data.error}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function JiraInstancesPage() {
@@ -154,18 +210,26 @@ export default function JiraInstancesPage() {
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string }>>({});
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
+  const [openLogJobId, setOpenLogJobId] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState("");
 
   const { data: instances = [] } = useQuery<Instance[]>({
     queryKey: ["jira-instances"],
     queryFn: () => apiFetch("/api/jira-instances"),
-    refetchInterval: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.some((i) => i.activeSyncJob != null) ? 2_000 : 10_000,
   });
 
   const { data: instanceDetail } = useQuery<{ syncJobs: SyncJob[] }>({
     queryKey: ["jira-instances", selectedInstance],
     queryFn: () => apiFetch(`/api/jira-instances/${selectedInstance}`),
     enabled: !!selectedInstance,
+    refetchInterval: (query) => {
+      const jobs = query.state.data?.syncJobs;
+      return jobs?.some((j) => j.status === "RUNNING" || j.status === "PENDING")
+        ? 2_000
+        : false;
+    },
   });
 
   const create = useMutation({
@@ -229,6 +293,7 @@ export default function JiraInstancesPage() {
 
             {instances.map((instance) => {
               const test = testResults[instance.id];
+              const active = instance.activeSyncJob;
               return (
                 <Card key={instance.id}>
                   <CardContent className="py-4">
@@ -243,6 +308,14 @@ export default function JiraInstancesPage() {
                             <Badge variant="green">Auto-sync</Badge>
                           ) : (
                             <Badge variant="outline">Manual</Badge>
+                          )}
+                          {active && (
+                            <span className="flex items-center gap-1 text-xs text-amber-400">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              {active.status === "RUNNING"
+                                ? `Syncing… ${active.ticketsSynced} tickets`
+                                : "Queued"}
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">{instance.url}</p>
@@ -283,16 +356,19 @@ export default function JiraInstancesPage() {
                         size="sm"
                         variant="primary"
                         onClick={() => triggerSync(instance.id)}
-                        disabled={syncing[instance.id]}
+                        disabled={syncing[instance.id] || !!active}
                       >
-                        {syncing[instance.id] ? (
+                        {syncing[instance.id] || active ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
                           <RefreshCw className="w-3.5 h-3.5" />
                         )}
-                        Sync Now
+                        {active ? "Syncing…" : "Sync Now"}
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setSelectedInstance(instance.id === selectedInstance ? null : instance.id)}>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setSelectedInstance(instance.id === selectedInstance ? null : instance.id);
+                        setOpenLogJobId(null);
+                      }}>
                         <Clock className="w-3.5 h-3.5" />
                         History
                       </Button>
@@ -303,16 +379,35 @@ export default function JiraInstancesPage() {
                       <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3">
                         <p className="text-xs font-medium text-slate-400 mb-2">Recent Syncs</p>
                         {instanceDetail.syncJobs.slice(0, 5).map((job) => (
-                          <div key={job.id} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <SyncStatus status={job.status} />
-                              <span className="text-slate-500">
-                                {job.ticketsSynced} tickets
-                              </span>
+                          <div key={job.id}>
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                <SyncStatusBadge status={job.status} />
+                                <span className="text-slate-500">
+                                  {job.ticketsSynced} tickets
+                                </span>
+                                {job.error && (
+                                  <span className="text-red-400 truncate max-w-[140px]" title={job.error}>
+                                    {job.error}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-600">
+                                  {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
+                                </span>
+                                <button
+                                  onClick={() => setOpenLogJobId(openLogJobId === job.id ? null : job.id)}
+                                  className="text-slate-500 hover:text-slate-300 flex items-center gap-0.5"
+                                  title="View logs"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
-                            <span className="text-slate-600">
-                              {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                            </span>
+                            {openLogJobId === job.id && (
+                              <LogViewer jobId={job.id} onClose={() => setOpenLogJobId(null)} />
+                            )}
                           </div>
                         ))}
                       </div>
