@@ -28,6 +28,16 @@ function getConnectionOptions() {
   return parseRedisUrl(url);
 }
 
+async function cleanupOrphanedJobs(prisma: PrismaClient) {
+  const { count } = await prisma.syncJob.updateMany({
+    where: { status: { in: ["PENDING", "RUNNING"] } },
+    data: { status: "FAILED", completedAt: new Date(), error: "Job interrompu — worker redémarré" },
+  });
+  if (count > 0) {
+    console.log(`[worker] ${count} job(s) orphelin(s) marqué(s) FAILED`);
+  }
+}
+
 async function registerRepeatableJobs(prisma: PrismaClient, connection: ReturnType<typeof getConnectionOptions>) {
   const syncQueue = new Queue(SYNC_QUEUE, { connection });
 
@@ -56,6 +66,7 @@ async function main() {
 
   console.log(`[worker] OmniJira sync worker starting... (verbose=${VERBOSE})`);
 
+  await cleanupOrphanedJobs(prisma);
   await registerRepeatableJobs(prisma, connection);
 
   const worker = new Worker<SyncJobData>(

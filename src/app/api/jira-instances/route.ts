@@ -24,7 +24,10 @@ export async function GET() {
       createdAt: true,
       _count: { select: { tickets: true, syncJobs: true } },
       syncJobs: {
-        where: { status: { in: ["PENDING", "RUNNING"] } },
+        where: {
+          status: { in: ["PENDING", "RUNNING"] },
+          createdAt: { gte: new Date(Date.now() - 4 * 60 * 60 * 1000) },
+        },
         orderBy: { createdAt: "desc" },
         take: 1,
         select: { id: true, status: true, ticketsSynced: true, startedAt: true },

@@ -226,7 +226,12 @@ export default function JiraInstancesPage() {
     enabled: !!selectedInstance,
     refetchInterval: (query) => {
       const jobs = query.state.data?.syncJobs;
-      return jobs?.some((j) => j.status === "RUNNING" || j.status === "PENDING")
+      const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+      return jobs?.some(
+        (j) =>
+          (j.status === "RUNNING" || j.status === "PENDING") &&
+          new Date(j.createdAt).getTime() > cutoff
+      )
         ? 2_000
         : false;
     },
