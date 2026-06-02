@@ -261,9 +261,13 @@ export default function JiraInstancesPage() {
     setTestResults((prev) => ({ ...prev, [id]: res }));
   }
 
-  async function triggerSync(id: string) {
+  async function triggerSync(id: string, force = false) {
     setSyncing((prev) => ({ ...prev, [id]: true }));
-    await fetch(`/api/jira-instances/${id}/sync`, { method: "POST" });
+    await fetch(`/api/jira-instances/${id}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
     setSyncing((prev) => ({ ...prev, [id]: false }));
     queryClient.invalidateQueries({ queryKey: ["jira-instances"] });
     setSelectedInstance(id);
@@ -369,6 +373,15 @@ export default function JiraInstancesPage() {
                           <RefreshCw className="w-3.5 h-3.5" />
                         )}
                         {active ? "Syncing…" : "Sync Now"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => triggerSync(instance.id, true)}
+                        disabled={syncing[instance.id] || !!active}
+                        title="Recharge tous les tickets depuis le début (ignore lastSyncAt)"
+                      >
+                        Full Sync
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => {
                         setSelectedInstance(instance.id === selectedInstance ? null : instance.id);
